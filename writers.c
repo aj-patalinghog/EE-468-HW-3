@@ -27,17 +27,35 @@ int waiting_readers = 0;
 int waiting_writers = 0;
 
 int reader_should_wait() {
-   return 0; // Make corrections
+   return (active_writers > 0 || waiting_writers > 0);
 }
 
 int writer_should_wait() {
-   return 0; // Make corrections
+   return (active_writers > 0 || active_readers > 0);
 }
 
 void start_access(struct th_params * p) {
    pthread_mutex_lock(&wp_lock);
 
-   // Fill in here
+   if (p->type == READER) {
+      waiting_readers++;
+
+      while(reader_should_wait()) {
+         pthread_cond_wait(&reader_go, &wp_lock);
+      }
+
+      waiting_readers--;
+      active_readers++;
+   } else if (p->type == WRITER) {
+      waiting_writers++;
+
+      while(writer_should_wait()) {
+         pthread_cond_wait(&writer_go, &wp_lock);
+      }
+
+      waiting_writers--;
+      active_writers++;
+   }
 
    pthread_mutex_unlock(&wp_lock);
 }
@@ -45,7 +63,21 @@ void start_access(struct th_params * p) {
 void done_access(struct th_params *p) {
    pthread_mutex_lock(&wp_lock);
 
-   // Fill in here
+   if (p->type == READER) {
+      active_readers--;
+
+      if (waiting_writers > 0 && active_readers == 0) {
+         pthread_cond_signal(&writer_go);
+      }
+   } else if (p->type == WRITER) {
+      active_writers--;
+
+      if (waiting_writers > 0) {
+         pthread_cond_signal(&writer_go);
+      } else {
+         pthread_cond_broadcast(&reader_go);
+      }
+   }
 
    pthread_mutex_unlock(&wp_lock);
 }
